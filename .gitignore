@@ -1,0 +1,5 @@
+.idea
+venv
+tests/integration/fixtures/*
+NyaaSort/SortConfig.ini
+tests/unit/SortConfig.ini
