@@ -3,9 +3,10 @@ import shutil
 import configparser
 import getpass
 import mimetypes
+import argparse
 
 CONFIG_NAME = 'SortConfig.ini'
-
+LOG_INFO = 'NA'
 
 class NyaaSort:
 
@@ -151,8 +152,11 @@ class NyaaSort:
 
     def create_script(self):
         # TODO add support for entering if you want logging in the command line
-        log = input("Do you want to enable logging?(Y/N)\n")
-        logging = 'True' if log.upper() == 'Y' or log.upper() == 'YES' else 'False'
+        if LOG_INFO=='NA':
+            log = input("Do you want to enable logging?(Y/N)\n")
+            logging = 'True' if log.upper() == 'Y' or log.upper() == 'YES' else 'False'
+        else:
+            logging=LOG_INFO
         # Get The user of this pc and the name of this file
         user_name = getpass.getuser()
         file_name = os.path.basename(__file__)
@@ -164,7 +168,7 @@ class NyaaSort:
                 # TODO I might need to change "python" to "start" when making this an exe file
                 bat_file.write(f'python {self.dir_path}\\{file_name}')
         except FileNotFoundError:
-            print("Try checking your pc username") if logging else 0
+            print("Try checking your pc username") if bool(logging) else 0
             input("File directory for storing .bat file was not found")
         except Exception as e:
             input(f'While opening the bat file {e} went wrong')
@@ -187,5 +191,11 @@ class NyaaSort:
 
 if __name__ == '__main__':
     # Find out the place were this script is and run the sorting
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--logging", required=False, help="Enable logging?: True/False")
+    
+    args = parser.parse_args()
+    if args.logging in ["True","False"]:
+        LOG_INFO=args.logging
     place = os.path.dirname(os.path.realpath(__file__))
     NyaaSort(place).sort()
