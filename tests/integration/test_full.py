@@ -18,7 +18,7 @@ class TestFull(unittest.TestCase):
             shutil.copytree(true_dir, self.dir)
 
     def test_nyaasort(self):
-        self.assertEqual(self.app(self.dir).sort(), None)
+        self.assertEqual(self.app(self.dir, 'True').sort(), None)
 
     def tearDown(self):
         # Remove the test dir
