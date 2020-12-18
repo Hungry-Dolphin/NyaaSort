@@ -12,18 +12,26 @@ CONFIG_NAME = 'SortConfig.ini'
 
 class NyaaSort:
 
-    def __init__(self, dir_path, log_info):
+    def __init__(self, dir_path, log_info=None):
         # Set-up logging
-        logger = log.getLogger('simple_log')
-        logger.setLevel(log.INFO)
-
+        logger = log.getLogger('NyaaSort Logger')
         ch = log.StreamHandler()
-        ch.setLevel(log.INFO)
-
         formatter = log.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         ch.setFormatter(formatter)
-        logger.addHandler(ch)
 
+        # We check for NoneType since 0 would not trigger otherwise
+        if log_info is not None:
+            if log_info == 'True':
+                logger.setLevel(log.INFO)
+                ch.setLevel(log.INFO)
+            elif log_info == 'False':
+                logger.setLevel(log.WARNING)
+                ch.setLevel(log.WARNING)
+            else:
+                logger.setLevel(log.DEBUG)
+                ch.setLevel(log.DEBUG)
+
+        logger.addHandler(ch)
         logger.debug("Logging started")
 
         # Set basic values
@@ -33,13 +41,12 @@ class NyaaSort:
 
         # Check if this is not the first time starting
         if os.path.exists(os.path.join(dir_path, CONFIG_NAME)):
-            logger.debug(f"Existing {CONFIG_NAME} found")
+            logger.debug(f"Existing {CONFIG_NAME} file found")
             self.config.read(os.path.join(dir_path, CONFIG_NAME))
             try:
                 # Get config settings
-                logging = bool(self.config.get('SORT', 'LOGGING'))
+                logging = bool(util.strtobool(self.config.get('SORT', 'LOGGING')))
                 enable_logging = logging
-                logger.debug(f"Logging set to {enable_logging}")
             except configparser.NoOptionError or configparser.NoSectionError or configparser.DuplicateSectionError:
                 logger.warning("Config file was corrupted, creating a new one")
                 os.remove(os.path.join(dir_path, CONFIG_NAME))
@@ -48,14 +55,19 @@ class NyaaSort:
             # If it is the first time starting it will setup all needed parameters
             # Please note that the create script sets up everything and returns if the user wants logging enabled
             enable_logging = self.create_script(log_info)
-            if not bool(util.strtobool(enable_logging)):
+            if not enable_logging:
                 # A bit sloppy way to only print if the user wanted logging
                 logger.info("Created new config")
 
         # If the user disabled logging only show errors
-        if not bool(util.strtobool(enable_logging)):
-            logger.setLevel(log.ERROR)
-            ch.setLevel(log.ERROR)
+        if log_info is None:
+            if enable_logging:
+                logger.setLevel(log.INFO)
+                ch.setLevel(log.INFO)
+            else:
+                logger.setLevel(log.ERROR)
+                ch.setLevel(log.ERROR)
+
         logger.info(f"Logging set to {logger.getEffectiveLevel()}")
 
         # Set logger
@@ -191,11 +203,15 @@ class NyaaSort:
             input("Press any key to exit \n")
 
     def create_script(self, log_info):
-        if not log_info:
+        # Technically if log_info: would also work
+        if log_info is None:
             log_input = input("Do you want to enable logging?(Y/N)\n")
             logging = 'True' if log_input.upper() == 'Y' or log_input.upper() == 'YES' else 'False'
         else:
-            logging = log_info
+            if log_info in ["True", "False"]:
+                logging = log_info
+            else:
+                logging = "True"
 
         # Get The user of this pc and the name of this file
         user_name = getpass.getuser()
@@ -214,7 +230,12 @@ class NyaaSort:
             input(f'While opening the bat file {e} went wrong')
 
         # Make a Config file for the script
-        self.config.add_section('SORT')
+        try:
+            self.config.add_section('SORT')
+        except configparser.DuplicateSectionError:
+            # If this triggers the sections were not corrupted but the value of LOGGING was
+            pass
+
         self.config['SORT']['LOGGING'] = logging
         try:
             with open(f'{self.dir_path}/{CONFIG_NAME}', 'w') as configfile:
@@ -226,7 +247,7 @@ class NyaaSort:
             input(f'While creating the bat file {e} went wrong')
 
         # Return if the user wanted logging enabled or not
-        return logging
+        return bool(util.strtobool(logging))
 
 
 if __name__ == '__main__':
@@ -237,7 +258,8 @@ if __name__ == '__main__':
     if args.logging in ["True", "False"]:
         LOG_INFO = args.logging
     else:
-        LOG_INFO = False
+        # Technically LOG_INFO could be anything but we don't want users to be able to do that
+        LOG_INFO = None
 
     # Find out the place were this script is and run the sorting
     place = os.path.dirname(os.path.realpath(__file__))
