@@ -2,5 +2,7 @@
 venv
 tests/integration/fixtures/*
 !tests/integration/fixtures/.gitkeep
+tests/unit/fixtures/*
+!tests/unit/fixtures/.gitkeep
 NyaaSort/SortConfig.ini
 tests/unit/SortConfig.ini
