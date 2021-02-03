@@ -42,12 +42,11 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(self.app(self.dir).get_anime_dict(folders), folders_dict)
         self.assertEqual(self.app(self.dir, 0).get_anime_dict(folders), folders_dict)
 
-    def test_move_anime(self):
-        self.assertEqual(self.app(self.dir).move_anime(), '')
-
     def tearDown(self):
         # Remove the test dir
         shutil.rmtree(self.dir)
+        # Remove the SortConfig.ini
+        os.remove(self.app.return_ini_location())
 
 
 if __name__ == '__main__':

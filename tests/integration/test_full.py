@@ -17,6 +17,8 @@ class TestFull(unittest.TestCase):
     def tearDown(self):
         # Remove the test dir
         shutil.rmtree(self.dir)
+        # Remove the SortConfig.ini
+        os.remove(self.app.return_ini_location())
 
 
 if __name__ == '__main__':
