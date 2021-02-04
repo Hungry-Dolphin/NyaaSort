@@ -17,11 +17,11 @@ It will run on boot-up, but you can make it manually run by either double clicki
 
 Before:
 
-![Before_image](./readme/pre test.png?raw=true "Before")
+![Before_image](./readme/pre-test.png?raw=true "Before")
 
 After: 
 
-![After image](./readme/default behavior.png?raw=true "After")
+![After image](./readme/default-behavior.png?raw=true "After")
 
 Folder view while using automatic folder icon creation:
 
@@ -38,7 +38,7 @@ I will try to make this more consistent, but there is not a lot of documentation
 
 An example of unwanted behavior which occurs is when the folder icon only shows up in the detail view.
 
-![bug image](./readme/example of iffy usage.png?raw=true "Bug")
+![bug image](./readme/iffyusage.png?raw=true "Bug")
 
 ## Contributing
 Pull requests are always welcome. For major changes, please open an issue first to discuss what you would like to change.
