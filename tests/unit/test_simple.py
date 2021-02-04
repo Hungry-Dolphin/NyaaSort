@@ -15,6 +15,7 @@ class TestSimple(unittest.TestCase):
     def test_init(self):
         self.assertEqual(self.app(self.dir, 'False').weak_error, False)
         self.assertEqual(self.app(self.dir, 'True').weak_error, False)
+        self.assertEqual(self.app(self.dir, log_info='True', folder_icons='False').weak_error, False)
         self.assertEqual(self.app(self.dir).weak_error, False)
         self.assertEqual(self.app(self.dir, 0).weak_error, False)
         self.assertEqual(self.app(self.dir, 0).weak_error, False)
@@ -41,6 +42,12 @@ class TestSimple(unittest.TestCase):
         self.assertEqual(self.app(self.dir, 'False').get_anime_dict(folders), folders_dict)
         self.assertEqual(self.app(self.dir).get_anime_dict(folders), folders_dict)
         self.assertEqual(self.app(self.dir, 0).get_anime_dict(folders), folders_dict)
+
+    def test_ini_location(self):
+        self.assertEqual(self.app(self.dir), self.app.return_ini_location())
+        self.assertEqual(self.app(self.dir, log_info='True').return_ini_location(), self.dir)
+        os.remove(self.app.return_ini_location())
+        self.assertEqual(self.app(self.dir, log_info='True', folder_icons='True').return_ini_location(), self.dir)
 
     def tearDown(self):
         # Remove the test dir

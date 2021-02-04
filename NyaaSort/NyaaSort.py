@@ -7,9 +7,10 @@ import argparse
 import logging as log
 import distutils.util as util
 import subprocess
+from urllib import request, parse
+
 try:
     from bs4 import BeautifulSoup
-    from urllib import request, parse
     from PIL import Image
     folder_icons_imports = True
 except ModuleNotFoundError:
@@ -357,7 +358,7 @@ class NyaaSort:
 
     @staticmethod
     def return_ini_location():
-        # returns the location of the ini file, usefull for unit tests
+        # returns the location of the ini file, useful for unit tests
         py_dir = os.path.dirname(os.path.realpath(__file__))
         return os.path.join(py_dir, CONFIG_NAME)
 
@@ -392,9 +393,19 @@ if __name__ == '__main__':
         if os.path.exists(args.directory):
             place = args.directory
         else:
-            place = os.path.dirname(os.path.realpath(__file__))
+            user_place = input("In which folder do you want your anime to be sorted?\n")
+            if os.path.exists(user_place):
+                place = user_place
+            else:
+                print("Unrecognised folder, using base folder of the script")
+                place = os.path.dirname(os.path.realpath(__file__))
     else:
         # Find out the dir of the script
-        place = os.path.dirname(os.path.realpath(__file__))
+        user_place = input("In which folder do you want your anime to be sorted?\n")
+        if os.path.exists(user_place):
+            place = user_place
+        else:
+            print("Unrecognised folder, using base folder of the script")
+            place = os.path.dirname(os.path.realpath(__file__))
 
     NyaaSort(dir_path=place, log_info=LOG_INFO, folder_icons=icons).sort()
