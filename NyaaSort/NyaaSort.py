@@ -239,6 +239,14 @@ class NyaaSort:
             else:
                 logging = "True"
 
+        if self.dir_path is None:
+            sort_place = input("In which folder do you want your anime to be sorted?\n")
+            if os.path.exists(sort_place):
+                self.dir_path = sort_place
+            else:
+                print("Unrecognised folder, using base folder of the script")
+                self.dir_path = os.path.dirname(os.path.realpath(__file__))
+
         # Get The user of this pc and the name of this file
         user_name = getpass.getuser()
         file_name = os.path.basename(__file__)
@@ -401,11 +409,6 @@ if __name__ == '__main__':
                 place = os.path.dirname(os.path.realpath(__file__))
     else:
         # Find out the dir of the script
-        user_place = input("In which folder do you want your anime to be sorted?\n")
-        if os.path.exists(user_place):
-            place = user_place
-        else:
-            print("Unrecognised folder, using base folder of the script")
-            place = os.path.dirname(os.path.realpath(__file__))
+        place = None
 
     NyaaSort(dir_path=place, log_info=LOG_INFO, folder_icons=icons).sort()
