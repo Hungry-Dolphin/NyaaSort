@@ -1,13 +1,14 @@
 import os
 import shutil
 import configparser
-import getpass
-import mimetypes
+from getpass import getuser
+from mimetypes import guess_type
 import argparse
 import logging as log
 import distutils.util as util
 import subprocess
 from urllib import request, parse
+from sys import platform
 
 try:
     from bs4 import BeautifulSoup
@@ -42,7 +43,6 @@ class NyaaSort:
 
         # Set self.experimental to true if we want to test new features
         self.folder_icons = True if folder_icons == "True" else False
-
         # Start logging
         logger.addHandler(ch)
         logger.debug("Logging started")
@@ -58,6 +58,8 @@ class NyaaSort:
         if os.path.exists(os.path.join(py_dir, CONFIG_NAME)):
             logger.debug(f"Existing {CONFIG_NAME} file found")
             self.config.read(os.path.join(py_dir, CONFIG_NAME))
+            exceptions = (configparser.NoOptionError, configparser.NoSectionError,
+                          configparser.DuplicateSectionError, ValueError)
             try:
                 # Get config settings
                 # Update the dir path to whatever was in the settings
@@ -68,7 +70,8 @@ class NyaaSort:
                 if not self.folder_icons:
                     self.folder_icons = settings_icons
                 enable_logging = logging
-            except configparser.NoOptionError or configparser.NoSectionError or configparser.DuplicateSectionError:
+            except exceptions as e:
+                logger.error(f"Encountered a {e} while trying to read the config file")
                 logger.warning("Config file was corrupted, creating a new one")
                 os.remove(os.path.join(py_dir, CONFIG_NAME))
                 enable_logging = self.create_script(log_info, folder_icons)
@@ -117,6 +120,9 @@ class NyaaSort:
             self.logger.warning(f"Encountered an error while attempting to move {item}")
             self.logger.warning(f'from {self.dir_path} to {to_folder}')
             self.weak_error = True
+        except PermissionError:
+            self.logger.warning(f"Could not move {item} permission was denied")
+            self.weak_error = True
 
     def sort(self):
         # Get all items in this directory
@@ -134,7 +140,7 @@ class NyaaSort:
             # TODO add support for mp4 files
             # The mimetypes tries to guess what kind of file it is, this is to prevent other stuff with the
             # .mkv extension getting into my folders
-            if item.endswith(".mkv") and 'video' in mimetypes.guess_type(item, strict=True)[0]:
+            if item.endswith(".mkv") and 'video' in guess_type(item, strict=True)[0]:
                 # fetch the group which did the group, done by finding the first ] in the string
                 nya_format = [']', '[', ' -', '] ']
                 if all(x in item for x in nya_format):
@@ -248,23 +254,33 @@ class NyaaSort:
                 self.dir_path = os.path.dirname(os.path.realpath(__file__))
 
         # Get The user of this pc and the name of this file
-        user_name = getpass.getuser()
+        user_name = getuser()
         file_name = os.path.basename(__file__)
 
         # Get the place that the .py script is located
         py_dir = os.path.dirname(os.path.realpath(__file__))
         # Make sure the script starts on startup
-        try:
-            # TODO make this linux compatible
-            bat_path = f'C:\\Users\\{user_name}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
-            with open(bat_path + '\\' + "AnimeSort.bat", "w+") as bat_file:
-                # TODO I might need to change "python" to "start" when making this an exe file
-                bat_file.write(f'python {py_dir}\\{file_name}')
-        except FileNotFoundError:
-            print("Try checking your pc username") if bool(logging) else 0
-            input("File directory for storing .bat file was not found")
-        except Exception as e:
-            input(f'While opening the bat file {e} went wrong')
+        # Note we use os.name for windows since we don't care what version of windows we are running
+        # sys.platform is more accurate which we need to distinguish between the other operating systems
+        if os.name == 'nt':
+            try:
+                bat_path = f'C:\\Users\\{user_name}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+                with open(bat_path + '\\' + "AnimeSort.bat", "w+") as bat_file:
+                    # TODO I might need to change "python" to "start" when making this an exe file
+                    bat_file.write(f'python {py_dir}\\{file_name}')
+            except FileNotFoundError:
+                print("Try checking your pc username") if bool(logging) else 0
+                input("File directory for storing .bat file was not found")
+            except Exception as e:
+                input(f'While opening the bat file {e} went wrong')
+        elif platform == "linux" or platform == "linux2":
+            # linux
+            print("The script can not automatically add itself to the boot-up process")
+            print("Please copy this script to your /bin manually and add another corn job")
+        elif platform == "darwin":
+            # OS X
+            print("The script can not automatically add itself to the boot-up process")
+            print("Please make your own plist and add it to the correct location")
 
         # Make a Config file for the script
         try:
@@ -275,9 +291,17 @@ class NyaaSort:
             pass
 
         # Set values for SORT section
-        self.config['SORT']['LOGGING'] = logging
-        self.config['SORT']['ICONS'] = folder_icons
-        self.config['SORT']['DIRECTORY'] = self.dir_path
+        # These should all already be strings but just to be sure
+        try:
+            self.config['SORT']['LOGGING'] = logging
+            self.config['SORT']['ICONS'] = folder_icons
+            self.config['SORT']['DIRECTORY'] = self.dir_path
+        except TypeError:
+            print("Critical Type error while creating config, Trying to continue")
+            self.config['SORT']['LOGGING'] = str(logging)
+            self.config['SORT']['ICONS'] = str(folder_icons)
+            self.config['SORT']['DIRECTORY'] = str(self.dir_path)
+
         try:
             with open(f'{py_dir}/{CONFIG_NAME}', 'w') as configfile:
                 self.config.write(configfile)
@@ -311,8 +335,9 @@ class NyaaSort:
         # TODO make it not so sensitive to edge cases, error testing
 
         if not os.name == 'nt':
-            self.logger.error("I've only tested this on windows, no clue what will happen on linux")
+            self.logger.error("This function will only work on windows")
             self.weak_error = True
+            return
 
         for anime in anime_dict:
             full_image_path = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
@@ -390,7 +415,7 @@ if __name__ == '__main__':
 
     if folder_icons_imports:
         if args.icons in ["True", "False"]:
-            icons = args.logging
+            icons = args.icons
         else:
             # Folder icons is optional so we could just create a class without it. But let's not do that
             icons = "False"
@@ -401,14 +426,8 @@ if __name__ == '__main__':
         if os.path.exists(args.directory):
             place = args.directory
         else:
-            user_place = input("In which folder do you want your anime to be sorted?\n")
-            if os.path.exists(user_place):
-                place = user_place
-            else:
-                print("Unrecognised folder, using base folder of the script")
-                place = os.path.dirname(os.path.realpath(__file__))
+            place = None
     else:
-        # Find out the dir of the script
         place = None
 
     NyaaSort(dir_path=place, log_info=LOG_INFO, folder_icons=icons).sort()
