@@ -5,7 +5,6 @@ $DesktopIni = @"
 [.ShellClassInfo]
 IconResource=$TargetDirectory\$anime.ico,0
 [ViewState]
-Mode=
 Vid=
 FolderType=Pictures
 Mode=4
