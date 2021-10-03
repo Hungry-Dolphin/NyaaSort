@@ -12,7 +12,7 @@ class TestFull(unittest.TestCase):
         self.app = NyaaSort
 
     def test_nyaasort(self):
-        self.assertEqual(self.app(self.dir, 0).sort(), None)
+        self.assertEqual(self.app(self.dir, 0, 'False', self.dir, 'None').sort(), None)
 
     def tearDown(self):
         # Remove the test dir

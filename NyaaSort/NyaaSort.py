@@ -22,7 +22,7 @@ CONFIG_NAME = 'SortConfig.ini'
 
 class NyaaSort:
 
-    def __init__(self, dir_path, log_info=None, folder_icons="False"):
+    def __init__(self, dir_path, log_info=None, folder_icons="False", s_dir=None, b_dir=None):
         # Set-up logging
         logger = log.getLogger('NyaaSort Logger')
         ch = log.StreamHandler()
@@ -49,6 +49,8 @@ class NyaaSort:
 
         # Set basic values
         self.dir_path = dir_path
+        self.sort_dir = s_dir
+        self.backup_dir = b_dir
         self.config = configparser.ConfigParser()
         self.weak_error = False
 
@@ -64,6 +66,13 @@ class NyaaSort:
                 # Get config settings
                 # Update the dir path to whatever was in the settings
                 self.dir_path = self.config.get('SORT', 'DIRECTORY')
+                self.sort_dir = self.config.get('SORT', 'SORTED_DIRECTORY')
+                # Since we can only save objects as strings we have to check to see if these strings are not None
+                if self.sort_dir == 'None':
+                    self.sort_dir = None
+                self.backup_dir = self.config.get('SORT', 'BACKUP_PATH')
+                if self.backup_dir == 'None':
+                    self.backup_dir = None
                 logging = bool(util.strtobool(self.config.get('SORT', 'LOGGING')))
                 settings_icons = bool(util.strtobool(self.config.get('SORT', 'ICONS')))
                 # Only update the value of experimental features if it has not been assigned yet
@@ -98,6 +107,14 @@ class NyaaSort:
         # Set logger
         self.logger = logger
 
+        # Check if backup dir and sort dir values are 'None', since the script saves them as such
+        # This part of the code should only trigger during unit tests, since it tests for this clause in the
+        # if __name__ part of the script
+        if self.sort_dir == 'None':
+            self.sort_dir = None
+        if self.backup_dir == 'None':
+            self.backup_dir = None
+
     def get_anime_dict(self, folders):
         anime_dict = dict()
 
@@ -113,8 +130,16 @@ class NyaaSort:
 
     def move_anime(self, item, to_folder):
         try:
+            # Create a copy
+            if self.backup_dir:
+                shutil.copy(os.path.join(self.dir_path, item), os.path.join(self.backup_dir, to_folder, item))
+                self.logger.info(f"Created a backup of {item} and copied it to {self.backup_dir}")
             # Move the anime to the renamed folder
-            shutil.move(os.path.join(self.dir_path, item), os.path.join(self.dir_path, to_folder, item))
+            if self.sort_dir:
+                shutil.move(os.path.join(self.dir_path, item), os.path.join(self.sort_dir, to_folder, item))
+            else:
+                shutil.move(os.path.join(self.dir_path, item), os.path.join(self.dir_path, to_folder, item))
+
             self.logger.info(f"Moved {item} to {to_folder}")
         except FileNotFoundError:
             self.logger.warning(f"Encountered an error while attempting to move {item}")
@@ -124,19 +149,28 @@ class NyaaSort:
             self.logger.warning(f"Could not move {item} permission was denied")
             self.weak_error = True
 
+    def get_folders_in_dir(self):
+        # Make a list of all the folders in the sorted anime dir
+        # Note this only takes the top level folders into consideration we are not interested in sub-folders
+        if self.sort_dir:
+            full_folders_dir = next(os.walk(self.sort_dir))[1]
+        else:
+            # if the sort_dir is equal to None the sorted directory is the same as the anime directory
+            full_folders_dir = next(os.walk(self.dir_path))[1]
+        return full_folders_dir
+
     def sort(self):
-        # Get all items in this directory
+        # Get all anime that needs to be sorted in the unsorted anime dir
         items_in_folder = os.listdir(self.dir_path)
 
-        # Make a list of all the folders in this directory
-        # Note this only takes the top level folders into consideration we are not interested in sub-folders
-        full_folders_dir = next(os.walk(self.dir_path))[1]
+        # Make a list of all the folders in the sorted anime dir
+        full_folders_dir = self.get_folders_in_dir()
 
-        # A list of all anime we have folders of
+        # A dictionary of all anime we have folders of
         anime_dict = self.get_anime_dict(full_folders_dir)
 
         for item in items_in_folder:
-            # All the anime I download ends with mkv
+            # All the anime I download are MKV files
             # TODO add support for mp4 files
             # The mimetypes tries to guess what kind of file it is, this is to prevent other stuff with the
             # .mkv extension getting into my folders
@@ -177,11 +211,23 @@ class NyaaSort:
 
                     else:
                         # Rename the folder so you know you have episodes from different groups
-                        rename = os.path.join(self.dir_path, f'[Multiple groups] {anime_name}')
+                        if self.sort_dir:
+                            rename = os.path.join(self.sort_dir, f'[Multiple groups] {anime_name}')
+                        else:
+                            rename = os.path.join(self.dir_path, f'[Multiple groups] {anime_name}')
 
                         try:
                             # Rename the folder
-                            os.rename(os.path.join(self.dir_path, anime_path), rename)
+                            if self.sort_dir:
+                                os.rename(os.path.join(self.sort_dir, anime_path), rename)
+                            else:
+                                os.rename(os.path.join(self.dir_path, anime_path), rename)
+
+                            # Change the name of the folder in the backup location
+                            if self.backup_dir:
+                                os.rename(os.path.join(self.backup_dir, anime_path),
+                                          os.path.join(self.backup_dir, f'[Multiple groups] {anime_name}'))
+
                             self.logger.info(f"Renamed the folder for {anime_name}")
 
                             try:
@@ -192,7 +238,7 @@ class NyaaSort:
                                 self.weak_error = True
 
                                 # Update the lists to hopefully resolve this error
-                                full_folders_dir = next(os.walk(self.dir_path))[1]
+                                full_folders_dir = self.get_folders_in_dir()
                                 anime_dict = self.get_anime_dict(full_folders_dir)
                                 self.logger.info("Updated the lists to hopefully remove the error")
 
@@ -206,10 +252,9 @@ class NyaaSort:
                 else:
                     # If we have not have a folder for the anime we will have to make a new one
                     dirty_folder_name = f'[{subtitle_group}] {anime_name}'
-                    new_folder = os.path.join(self.dir_path, dirty_folder_name)
-                    # I could not find a way to break os.makedir so no try except block here
-                    os.makedirs(new_folder)
+                    new_folder = self.create_folder(dirty_folder_name)
                     self.logger.info(f"created a new folder for the show: {anime_name}")
+
                     # Append the anime to our anime list
                     try:
                         anime_dict[anime_name] = dirty_folder_name
@@ -234,6 +279,22 @@ class NyaaSort:
         if self.weak_error and self.logger.getEffectiveLevel() < 30:
             input("Press any key to exit \n")
 
+    def create_folder(self, folder_name):
+        if self.sort_dir:
+            new_folder = os.path.join(self.sort_dir, folder_name)
+        else:
+            new_folder = os.path.join(self.dir_path, folder_name)
+        # I could not find a way to break os.makedir so no try except block here
+        os.makedirs(new_folder)
+
+        # Also create a folder in the backup location
+        if self.backup_dir:
+            folder = os.path.join(self.backup_dir, folder_name)
+            # I could not find a way to break os.makedir so no try except block here
+            os.makedirs(folder)
+
+        return new_folder
+
     def create_script(self, log_info, folder_icons):
         # Technically if log_info: would also work
         if log_info is None:
@@ -246,12 +307,30 @@ class NyaaSort:
                 logging = "True"
 
         if self.dir_path is None:
-            sort_place = input("In which folder do you want your anime to be sorted?\n")
+            sort_place = input("In which directory is the anime you want to sort located?\n")
             if os.path.exists(sort_place):
                 self.dir_path = sort_place
             else:
                 print("Unrecognised folder, using base folder of the script")
                 self.dir_path = os.path.dirname(os.path.realpath(__file__))
+
+        if self.sort_dir is None:
+            sort_place = input("In which directory should the sorted anime go?\n"
+                               "Keep this empty if you want the same directory as the place the anime is located\n")
+            if os.path.exists(sort_place):
+                self.sort_dir = sort_place
+            else:
+                print("Using same folder as -d")
+                self.sort_dir = None
+
+        if self.backup_dir is None:
+            sort_place = input("In which directory should I backup the sorted anime?\n"
+                               "Keep this empty for no backups\n")
+            if os.path.exists(sort_place):
+                self.backup_dir = sort_place
+            else:
+                print("Creating no backups")
+                self.backup_dir = None
 
         # Get The user of this pc and the name of this file
         user_name = getuser()
@@ -264,7 +343,8 @@ class NyaaSort:
         # sys.platform is more accurate which we need to distinguish between the other operating systems
         if os.name == 'nt':
             try:
-                bat_path = f'C:\\Users\\{user_name}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
+                bat_path = f'C:\\Users\\{user_name}\\' \
+                           f'AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
                 with open(bat_path + '\\' + "AnimeSort.bat", "w+") as bat_file:
                     # TODO I might need to change "python" to "start" when making this an exe file
                     bat_file.write(f'python {py_dir}\\{file_name}')
@@ -296,11 +376,16 @@ class NyaaSort:
             self.config['SORT']['LOGGING'] = logging
             self.config['SORT']['ICONS'] = folder_icons
             self.config['SORT']['DIRECTORY'] = self.dir_path
+            self.config['SORT']['SORTED_DIRECTORY'] = str(self.sort_dir)
+            self.config['SORT']['BACKUP_PATH'] = str(self.backup_dir)
         except TypeError:
             print("Critical Type error while creating config, Trying to continue")
             self.config['SORT']['LOGGING'] = str(logging)
             self.config['SORT']['ICONS'] = str(folder_icons)
             self.config['SORT']['DIRECTORY'] = str(self.dir_path)
+            self.config['SORT']['SORTED_DIRECTORY'] = str(self.sort_dir)
+            self.config['SORT']['BACKUP_PATH'] = str(self.backup_dir)
+            print("Retry successful")
 
         try:
             with open(f'{py_dir}/{CONFIG_NAME}', 'w') as configfile:
@@ -340,7 +425,11 @@ class NyaaSort:
             return
 
         for anime in anime_dict:
-            full_image_path = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
+            if self.sort_dir:
+                full_image_path = os.path.join(self.sort_dir, anime_dict[anime], f"{anime}.ico")
+            else:
+                full_image_path = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
+
             if not os.path.exists(full_image_path):
                 # Transfer the anime name to html speak
                 url_name = parse.quote(anime)
@@ -376,14 +465,20 @@ class NyaaSort:
                 # Reformat the image as .ico
                 img = Image.open(full_image_path)
                 img.resize((256, 256), Image.ANTIALIAS)
-                ico_dir = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
+                if self.sort_dir:
+                    ico_dir = os.path.join(self.sort_dir, anime_dict[anime], f"{anime}.ico")
+                else:
+                    ico_dir = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
                 try:
                     img.save(ico_dir, format='ICO')
                 except FileNotFoundError:
                     self.logger.error(f"No directory {ico_dir}")
 
                 # Here we call the powershell script to set the folder icon
-                folder = os.path.join(self.dir_path, anime_dict[anime])
+                if self.sort_dir:
+                    folder = os.path.join(self.sort_dir, anime_dict[anime])
+                else:
+                    folder = os.path.join(self.dir_path, anime_dict[anime])
                 ec = subprocess.call(
                     ['powershell', "-ExecutionPolicy", "Unrestricted", "-File", './set_folder_ico.ps1', f'{folder}',
                      f'{anime}'])
@@ -400,7 +495,11 @@ if __name__ == '__main__':
     # Get arguments provided
     parser = argparse.ArgumentParser()
     parser.add_argument("-l", "--logging", required=False, help="Enable logging?: True/False")
-    parser.add_argument("-d", "--directory", required=False, help="The folder of anime to sort")
+    parser.add_argument("-d", "--directory", required=False, help="The folder where the anime files are located")
+    parser.add_argument("-o", "--output_directory", required=False, help="The folder where the sorted anime should go,"
+                                                                         "leave this blank for the same folder as -d ")
+    parser.add_argument("-b", "--backup", required=False, help="If the script should store a backup of the anime "
+                                                               "somewhere else")
 
     if folder_icons_imports:
         parser.add_argument("-i", "--icons", required=False, help="create matching folder icons?: True/False")
@@ -424,10 +523,26 @@ if __name__ == '__main__':
 
     if args.directory:
         if os.path.exists(args.directory):
-            place = args.directory
+            anime_dir = args.directory
         else:
-            place = None
+            anime_dir = None
     else:
-        place = None
+        anime_dir = None
 
-    NyaaSort(dir_path=place, log_info=LOG_INFO, folder_icons=icons).sort()
+    if args.output_directory:
+        if os.path.exists(args.output_directory):
+            sort_dir = args.output_directory
+        else:
+            sort_dir = None
+    else:
+        sort_dir = None
+
+    if args.backup:
+        if os.path.exists(args.backup):
+            backup_dir = args.backup
+        else:
+            backup_dir = None
+    else:
+        backup_dir = None
+
+    NyaaSort(dir_path=anime_dir, log_info=LOG_INFO, folder_icons=icons, s_dir=sort_dir, b_dir=backup_dir).sort()

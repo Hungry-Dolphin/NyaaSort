@@ -6,3 +6,5 @@ tests/unit/fixtures/*
 !tests/unit/fixtures/.gitkeep
 NyaaSort/SortConfig.ini
 tests/unit/SortConfig.ini
+tests/integration/test_temp_dir/*
+tests/unit/test_temp_dir/*
