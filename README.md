@@ -10,10 +10,11 @@ Just double-click the NyaaSort.py file and answer the questions it asks you.
 
 It will automatically add itself to boot-up, if somebody wants me to make that an option instead of a default let me know. 
 
-Note that if you want to use the automatic icon creation you will need to install Pillow and bs4 using pip
+Note that if you want to use the automatic icon creation you will need to install Pillow and bs4 using pip.
 
 ## Setup
-It is recommended to just double click the file and follow the questions it asks you. Alternatively you can give it all needed commands from a terminal, use the help command to see what functions you might need
+It is recommended to just double click the file and follow the questions it asks you. Alternatively you can give it all needed commands from a terminal, use the help command to see what functions you might need.
+
 ![setup](./readme/setup.png?raw=true "Before")
 
 ## Usage
