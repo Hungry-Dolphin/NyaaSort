@@ -51,15 +51,18 @@ class NyaaSort:
         self.dir_path = dir_path
         self.sort_dir = s_dir
         self.backup_dir = b_dir
+        self.anime_dict = {}
         self.config = configparser.ConfigParser()
+        logging_level = None
+
+        # The self.weak error variable will be used to check if the script found any errors while running
         self.weak_error = False
 
         # Check if this is not the first time starting
         # Get the place that the .py script is located
-        py_dir = os.path.dirname(os.path.realpath(__file__))
-        if os.path.exists(os.path.join(py_dir, CONFIG_NAME)):
+        if os.path.exists(self.return_ini_location()):
             logger.debug(f"Existing {CONFIG_NAME} file found")
-            self.config.read(os.path.join(py_dir, CONFIG_NAME))
+            self.config.read(self.return_ini_location())
             exceptions = (configparser.NoOptionError, configparser.NoSectionError,
                           configparser.DuplicateSectionError, ValueError)
             try:
@@ -67,35 +70,37 @@ class NyaaSort:
                 # Update the dir path to whatever was in the settings
                 self.dir_path = self.config.get('SORT', 'DIRECTORY')
                 self.sort_dir = self.config.get('SORT', 'SORTED_DIRECTORY')
+                self.backup_dir = self.config.get('SORT', 'BACKUP_PATH')
+                logging_level = bool(util.strtobool(self.config.get('SORT', 'LOGGING')))
+                settings_icons = bool(util.strtobool(self.config.get('SORT', 'ICONS')))
+
                 # Since we can only save objects as strings we have to check to see if these strings are not None
                 if self.sort_dir == 'None':
                     self.sort_dir = None
-                self.backup_dir = self.config.get('SORT', 'BACKUP_PATH')
                 if self.backup_dir == 'None':
                     self.backup_dir = None
-                logging = bool(util.strtobool(self.config.get('SORT', 'LOGGING')))
-                settings_icons = bool(util.strtobool(self.config.get('SORT', 'ICONS')))
+
                 # Only update the value of experimental features if it has not been assigned yet
                 if not self.folder_icons:
                     self.folder_icons = settings_icons
-                enable_logging = logging
+
             except exceptions as e:
                 logger.error(f"Encountered a {e} while trying to read the config file")
                 logger.warning("Config file was corrupted, creating a new one")
-                os.remove(os.path.join(py_dir, CONFIG_NAME))
-                enable_logging = self.create_script(log_info, folder_icons)
+                os.remove(self.return_ini_location())
+                self.create_script(log_info, folder_icons)
         else:
             # If it is the first time starting it will setup all needed parameters
-            # Please note that the create script sets up everything and returns if the user wants logging enabled
-            enable_logging = self.create_script(log_info, folder_icons)
-            if not enable_logging:
-                # A bit sloppy way to only print if the user wanted logging
-                logger.info("Created new config")
+            # Please note that the create script function returns if the user wants logging enabled
+            self.create_script(log_info, folder_icons)
 
         # This part triggers if the user did not use the logging flag
+        # This behavior means that you can manually force the script to enable logging
+        # This can be done by supplying it with a logging flag when executing
+        # Since log_info will already be set than and it will thus skip this check
         if log_info is None:
-            # If the user wanted logging in the settings file
-            if enable_logging:
+            # Check if the user enabled logging in the config file
+            if logging_level:
                 logger.setLevel(log.INFO)
                 ch.setLevel(log.INFO)
             else:
@@ -107,9 +112,8 @@ class NyaaSort:
         # Set logger
         self.logger = logger
 
-        # Check if backup dir and sort dir values are 'None', since the script saves them as such
-        # This part of the code should only trigger during unit tests, since it tests for this clause in the
-        # if __name__ part of the script
+        # Check if backup dir and sort dir values are 'None', this should only apply during unit tests,
+        # The ini file stores values as strings but those get converted when the values are set
         if self.sort_dir == 'None':
             self.sort_dir = None
         if self.backup_dir == 'None':
@@ -118,29 +122,42 @@ class NyaaSort:
     def get_anime_dict(self, folders):
         anime_dict = dict()
 
+        # So for each folder in the folders provided
         for folder in folders:
+            # Look whether there is a ] in the title, every folder created by this script will have
+            # a name that starts with [group] anime
             if '] ' in folder:
+                # Get the anime name by splitting the folder name in 2 from the ] icon and use everything after it
                 anime = folder.split('] ', 1)[1]
+                # Check if we already have this show in our folder structure
+                # Ive had this happen once because of a movie i downloaded without the interference of this script
+                # It's not a real issue though, for now it just uses the first folder it found
                 if anime in anime_dict:
                     self.logger.warning(f"Found an anime which has 2 folders {anime}")
                     self.weak_error = True
                 else:
+                    # Add the show to the dictionary with the anime as key
                     anime_dict[anime] = folder
-        return anime_dict
+
+        # Update the dictionary
+        self.anime_dict = anime_dict
 
     def move_anime(self, item, to_folder):
         try:
-            # Create a copy
+            # Create a copy of the anime episode
             if self.backup_dir:
                 shutil.copy(os.path.join(self.dir_path, item), os.path.join(self.backup_dir, to_folder, item))
                 self.logger.info(f"Created a backup of {item} and copied it to {self.backup_dir}")
-            # Move the anime to the renamed folder
+
+            # Move the anime episode to the renamed folder
+            # Check if the directory has to be the same as were the anime is located
             if self.sort_dir:
                 shutil.move(os.path.join(self.dir_path, item), os.path.join(self.sort_dir, to_folder, item))
             else:
                 shutil.move(os.path.join(self.dir_path, item), os.path.join(self.dir_path, to_folder, item))
 
             self.logger.info(f"Moved {item} to {to_folder}")
+
         except FileNotFoundError:
             self.logger.warning(f"Encountered an error while attempting to move {item}")
             self.logger.warning(f'from {self.dir_path} to {to_folder}')
@@ -166,39 +183,45 @@ class NyaaSort:
         # Make a list of all the folders in the sorted anime dir
         full_folders_dir = self.get_folders_in_dir()
 
-        # A dictionary of all anime we have folders of
-        anime_dict = self.get_anime_dict(full_folders_dir)
+        # Update the dictionary of all anime we have existing folders for
+        self.get_anime_dict(full_folders_dir)
 
         for item in items_in_folder:
-            # All the anime I download are MKV files
+            # All the anime I download off Nyaa are MKV files
             # TODO add support for mp4 files
             # The mimetypes tries to guess what kind of file it is, this is to prevent other stuff with the
             # .mkv extension getting into my folders
             if item.endswith(".mkv") and 'video' in guess_type(item, strict=True)[0]:
-                # fetch the group which did the group, done by finding the first ] in the string
+                # Fetch the group which did the group, done by finding the first ] in the string
                 nya_format = [']', '[', ' -', '] ']
+                # Check if the file has all characters needed to be a matching of the nyaa format
                 if all(x in item for x in nya_format):
                     try:
+                        # Get the group by getting everything between the first [ and ]
                         subtitle_group = str(item.split(']', 1)[0]).replace('[', '', 1)
                         # fetch the name of the anime by taking everything after the first ] and before the last -
                         anime_name = str(item.split('] ', 1)[1]).rsplit(" -", 1)[0]
                     except IndexError:
+                        # This will trigger if you create a file name containing all nya_format characters
+                        # But it is not the correct format after all
                         self.logger.warning(f"Encountered an error while string slicing {item}")
                         self.weak_error = True
                         continue
                 else:
+                    # Executes if there is a MKV file in the directory but its not formatted in the correct way
                     self.logger.warning(f"Skipped {item} for not having the correct string format")
                     self.weak_error = True
                     continue
 
-                if anime_name in anime_dict:
+                # If the anime this episode belongs to already has a folder made we only have to move it in there
+                if anime_name in self.anime_dict:
                     # Get the folder name associated with that anime
-                    anime_path = anime_dict[anime_name]
+                    anime_path = self.anime_dict[anime_name]
 
-                    if ']' in anime_path and '[' in anime_path:
+                    try:
                         folder_subtitle_group = str(anime_path.split(']', 1)[0]).replace('[', '', 1)
-                    else:
-                        # This part of the code should not trigger since it filters for these sings on dict creation
+                    except IndexError:
+                        # This code should not trigger since it accounts for this error on dictionary creation
                         # Getting here means something went horribly wrong
                         self.logger.critical(f'Critical folder naming error for {anime_path}, anime: {anime_name}')
                         input('Please fix the error and then reboot the script')
@@ -210,90 +233,99 @@ class NyaaSort:
                         self.move_anime(item, anime_path)
 
                     else:
-                        # Rename the folder so you know you have episodes from different groups
-                        if self.sort_dir:
-                            rename = os.path.join(self.sort_dir, f'[Multiple groups] {anime_name}')
-                        else:
-                            rename = os.path.join(self.dir_path, f'[Multiple groups] {anime_name}')
+                        # Rename the folder so you know you have episodes done by different groups
 
-                        try:
-                            # Rename the folder
-                            if self.sort_dir:
-                                os.rename(os.path.join(self.sort_dir, anime_path), rename)
-                            else:
-                                os.rename(os.path.join(self.dir_path, anime_path), rename)
-
-                            # Change the name of the folder in the backup location
-                            if self.backup_dir:
-                                os.rename(os.path.join(self.backup_dir, anime_path),
-                                          os.path.join(self.backup_dir, f'[Multiple groups] {anime_name}'))
-
-                            self.logger.info(f"Renamed the folder for {anime_name}")
-
-                            try:
-                                # Change our dict so it contains the new name of the folder
-                                anime_dict.update({f'{anime_name}': f'[Multiple groups] {anime_name}'})
-                            except ValueError:
-                                self.logger.error("Encountered an ValueError while attempting to update the dict")
-                                self.weak_error = True
-
-                                # Update the lists to hopefully resolve this error
-                                full_folders_dir = self.get_folders_in_dir()
-                                anime_dict = self.get_anime_dict(full_folders_dir)
-                                self.logger.info("Updated the lists to hopefully remove the error")
-
-                            # Move the anime to the new folder
-                            self.move_anime(item, rename)
-
-                        except FileNotFoundError:
-                            self.logger.error(f"Encountered an error while attempting to rename folder {anime_path}")
-                            self.logger.error(f'from {anime_path} to {rename}')
-                            self.weak_error = True
+                        self.rename_folder(item, anime_name, anime_path)
                 else:
                     # If we have not have a folder for the anime we will have to make a new one
                     dirty_folder_name = f'[{subtitle_group}] {anime_name}'
+
                     new_folder = self.create_folder(dirty_folder_name)
+
                     self.logger.info(f"created a new folder for the show: {anime_name}")
 
                     # Append the anime to our anime list
                     try:
-                        anime_dict[anime_name] = dirty_folder_name
+                        self.anime_dict[anime_name] = dirty_folder_name
+
                     except ValueError:
                         # A valueError should only occur if the anime in question already has an entry
-                        # This should not be possible but if it is
-                        # Update the lists to hopefully resolve this error
+                        # This should not be possible but if it happens
+                        # Updating the lists will hopefully resolve this error
                         self.logger.error("Encountered an ValueError while attempting to update the dict")
                         self.weak_error = True
-                        full_folders_dir = next(os.walk(self.dir_path))[1]
-                        anime_dict = self.get_anime_dict(full_folders_dir)
-                        self.logger.info("Updated the lists to hopefully remove the error")
+                        full_folders_dir = self.get_folders_in_dir()
+                        self.get_anime_dict(full_folders_dir)
+                        self.logger.info("Updated the lists to hopefully resolve the ValueError")
 
                     # Move the anime in the new folder
                     self.move_anime(item, new_folder)
 
         # Check if the user wanted folder icons
         if self.folder_icons:
-            self.make_icons(anime_dict)
+            self.make_icons()
 
         # if any weak errors were encountered make sure the popup window from python does not disappear
         if self.weak_error and self.logger.getEffectiveLevel() < 30:
             input("Press any key to exit \n")
 
+    def rename_folder(self, item, anime_name, anime_path):
+        # Check if the directory of the anime file is the same as the sorting directory
+        if self.sort_dir:
+            # Set the path + wanted name of the anime
+            rename = os.path.join(self.sort_dir, f'[Multiple groups] {anime_name}')
+        else:
+            rename = os.path.join(self.dir_path, f'[Multiple groups] {anime_name}')
+
+        try:
+            # Rename the folder
+            if self.sort_dir:
+                os.rename(os.path.join(self.sort_dir, anime_path), rename)
+            else:
+                os.rename(os.path.join(self.dir_path, anime_path), rename)
+
+            # Change the name of the folder in the backup location
+            if self.backup_dir:
+                os.rename(os.path.join(self.backup_dir, anime_path),
+                          os.path.join(self.backup_dir, f'[Multiple groups] {anime_name}'))
+
+            self.logger.info(f"Renamed the folder for {anime_name}")
+
+            try:
+                # Change our dict so it contains the new name of the folder
+                self.anime_dict.update({f'{anime_name}': f'[Multiple groups] {anime_name}'})
+
+            except ValueError:
+                # Updating the lists will hopefully resolve this error
+                self.logger.error("Encountered an ValueError while attempting to update the dict")
+                self.weak_error = True
+                full_folders_dir = self.get_folders_in_dir()
+                self.get_anime_dict(full_folders_dir)
+                self.logger.info("Updated the lists to hopefully resolve the ValueError")
+
+            # Move the anime to the new folder
+            self.move_anime(item, rename)
+
+        except FileNotFoundError:
+            self.logger.error(f"Encountered an error while attempting to rename folder {anime_path}")
+            self.logger.error(f'from {anime_path} to {rename}')
+            self.weak_error = True
+
     def create_folder(self, folder_name):
         if self.sort_dir:
-            new_folder = os.path.join(self.sort_dir, folder_name)
+            new_folder_path = os.path.join(self.sort_dir, folder_name)
         else:
-            new_folder = os.path.join(self.dir_path, folder_name)
+            new_folder_path = os.path.join(self.dir_path, folder_name)
         # I could not find a way to break os.makedir so no try except block here
-        os.makedirs(new_folder)
+        os.makedirs(new_folder_path)
 
         # Also create a folder in the backup location
         if self.backup_dir:
-            folder = os.path.join(self.backup_dir, folder_name)
+            backup_folder_path = os.path.join(self.backup_dir, folder_name)
             # I could not find a way to break os.makedir so no try except block here
-            os.makedirs(folder)
+            os.makedirs(backup_folder_path)
 
-        return new_folder
+        return new_folder_path
 
     def create_script(self, log_info, folder_icons):
         # Technically if log_info: would also work
@@ -396,8 +428,8 @@ class NyaaSort:
         except Exception as e:
             input(f'While creating the bat file {e} went wrong')
 
-        # Return if the user wanted logging enabled or not
-        return bool(util.strtobool(logging))
+        # I have to use in a print since self.logger does not get defined until later in the setup
+        print("Created new config")
 
     def connect_to(self, url):
         try:
@@ -410,7 +442,7 @@ class NyaaSort:
             self.logger.error(f"{e} went wrong while trying to connect to {url}")
         return False
 
-    def make_icons(self, anime_dict):
+    def make_icons(self):
         if not folder_icons_imports:
             self.logger.warning("Not all modules needed are imported, aborting")
             return
@@ -424,11 +456,11 @@ class NyaaSort:
             self.weak_error = True
             return
 
-        for anime in anime_dict:
+        for anime in self.anime_dict:
             if self.sort_dir:
-                full_image_path = os.path.join(self.sort_dir, anime_dict[anime], f"{anime}.ico")
+                full_image_path = os.path.join(self.sort_dir, self.anime_dict[anime], f"{anime}.ico")
             else:
-                full_image_path = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
+                full_image_path = os.path.join(self.dir_path, self.anime_dict[anime], f"{anime}.ico")
 
             if not os.path.exists(full_image_path):
                 # Transfer the anime name to html speak
@@ -466,9 +498,9 @@ class NyaaSort:
                 img = Image.open(full_image_path)
                 img.resize((256, 256), Image.ANTIALIAS)
                 if self.sort_dir:
-                    ico_dir = os.path.join(self.sort_dir, anime_dict[anime], f"{anime}.ico")
+                    ico_dir = os.path.join(self.sort_dir, self.anime_dict[anime], f"{anime}.ico")
                 else:
-                    ico_dir = os.path.join(self.dir_path, anime_dict[anime], f"{anime}.ico")
+                    ico_dir = os.path.join(self.dir_path, self.anime_dict[anime], f"{anime}.ico")
                 try:
                     img.save(ico_dir, format='ICO')
                 except FileNotFoundError:
@@ -476,9 +508,9 @@ class NyaaSort:
 
                 # Here we call the powershell script to set the folder icon
                 if self.sort_dir:
-                    folder = os.path.join(self.sort_dir, anime_dict[anime])
+                    folder = os.path.join(self.sort_dir, self.anime_dict[anime])
                 else:
-                    folder = os.path.join(self.dir_path, anime_dict[anime])
+                    folder = os.path.join(self.dir_path, self.anime_dict[anime])
                 ec = subprocess.call(
                     ['powershell', "-ExecutionPolicy", "Unrestricted", "-File", './set_folder_ico.ps1', f'{folder}',
                      f'{anime}'])
